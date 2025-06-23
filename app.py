@@ -53,6 +53,18 @@ def save_subscriptions_to_file():
     except Exception as e:
         print(f"❗ Firestore 저장 실패: {e}")
 
+def load_subscriptions_from_firestore():
+    global alert_subscriptions
+    try:
+        alert_subscriptions = []
+        subscriptions_ref = db.collection("subscriptions").stream()
+        for doc in subscriptions_ref:
+            data = doc.to_dict()
+            alert_subscriptions.append(data)
+
+        print(f"☁️ Firestore로부터 구독 로드 완료: {len(alert_subscriptions)}개의 구독")
+    except Exception as e:
+        print(f"❗ Firestore 구독 로드 실패: {e}")
 
 # 🔐 Step 1. access_token 발급 함수
 def get_access_token(client_id, client_secret):
@@ -399,121 +411,114 @@ def detect_carrier(tracking_number, access_token):
     return None
 
 def check_tracking_status():
-    print(f"🧠 PID: {os.getpid()} - 배송 상태 체크 스레드 시작됨")
-    while True:
-        time.sleep(300)  # 5분마다 실행
-        print("\n🔄 배송 상태 확인 시작...")
-        try:
-            access_token = get_access_token(TRACKER_CLIENT_ID, TRACKER_CLIENT_SECRET)
-            print(f"✅ Access Token 생성 성공: {access_token[:10]}...")  # 첫 10글자만 출력
-        except Exception as e:
-            print(f"❗ Access Token 생성 실패: {e}")
+    """5분마다 실행될 로직"""
+    print(f"🧠 PID: {os.getpid()} - 배송 상태 체크 호출")
+    try:
+        access_token = get_access_token(TRACKER_CLIENT_ID, TRACKER_CLIENT_SECRET)
+        print(f"✅ Access Token 생성 성공: {access_token[:10]}...")
+    except Exception as e:
+        print(f"❗ Access Token 생성 실패: {e}")
+        return
+
+    for sub in alert_subscriptions:
+        invoice = sub.get('invoice')
+        token = sub.get('token')
+        user_id = sub.get('user_id')
+        prev_status = sub.get('status', '')
+        carrier_id = sub.get('carrier_id')
+
+        if not carrier_id:
+            print(f"❗ carrierId 없음 - 송장번호: {invoice}")
             continue
 
-        for sub in alert_subscriptions:
-            invoice = sub.get('invoice')
-            token = sub.get('token')
-            user_id = sub.get('user_id')
-            prev_status = sub.get('status', '')
-            carrier_id = sub.get('carrier_id')
-
-            if not carrier_id:
-                print(f"❗ carrierId 없음 - 송장번호: {invoice}")
-                continue
-
-            try:
-                query = '''
-                query Track($carrierId: ID!, $trackingNumber: String!) {
-                  track(carrierId: $carrierId, trackingNumber: $trackingNumber) {
-                    lastEvent {
-                      status {
-                        name
-                      }
-                    }
+        try:
+            query = """
+            query Track($carrierId: ID!, $trackingNumber: String!) {
+              track(carrierId: $carrierId, trackingNumber: $trackingNumber) {
+                lastEvent {
+                  status {
+                    name
                   }
                 }
-                '''
-                variables = {"carrierId": carrier_id, "trackingNumber": invoice}
-                headers = {
-                    'Content-Type': 'application/json',
-                    'Authorization': f'Bearer {access_token}'
-                }
+              }
+            }
+            """
+            variables = {"carrierId": carrier_id, "trackingNumber": invoice}
+            headers = {
+                'Content-Type': 'application/json',
+                'Authorization': f'Bearer {access_token}'
+            }
+            response = requests.post(
+                'https://apis.tracker.delivery/graphql',
+                headers=headers,
+                json={'query': query, 'variables': variables}
+            )
+            if response.status_code != 200:
+                print(f"❌ [{invoice}] HTTP Status: {response.status_code}")
+                continue
 
-                response = requests.post(
-                    'https://apis.tracker.delivery/graphql',
-                    headers=headers,
-                    json={'query': query, 'variables': variables}
-                )
-                
-                if response.status_code != 200:
-                    print(f"❌ [{invoice}] HTTP Status: {response.status_code}")
-                    print(f"❌ [{invoice}] 원인 추정: {response.text}")
-                    continue
+            result = response.json()
+            if 'errors' in result:
+                print(f"❗ [{invoice}] GraphQL 오류 발생: {result['errors']}")
+                continue
+            if 'data' not in result or not result['data'].get('track'):
+                print(f"❗ [{invoice}] 데이터 누락 또는 잘못된 응답.")
+                continue
 
-                try:
-                    result = response.json()
-                except Exception as e:
-                    print(f"❗ [{invoice}] JSON 파싱 실패: {e}")
-                    continue
+            current_status = result['data']['track']['lastEvent']['status']['name']
+            norm_status = normalize_status(current_status)
 
-                if 'errors' in result:
-                    print(f"❗ [{invoice}] GraphQL 오류 발생: {result['errors']}")
-                    continue
-                if 'data' not in result or not result['data'].get('track'):
-                    print(f"❗ [{invoice}] 데이터 누락 또는 잘못된 응답: {json.dumps(result, ensure_ascii=False)}")
-                    continue
+            if prev_status != norm_status:
+                print(f"✅ [{invoice}] 상태 변경 감지: {prev_status} → {norm_status}")
 
-                current_status = result['data']['track']['lastEvent']['status']['name']
-                norm_status = normalize_status(current_status)
+                if sub.get('alert_enabled', True):
+                    prediction = predict_arrival_internal(current_status, datetime.now().isoformat())
+                    eta_str = "도착 시간 예측 불가"
+                    if prediction.get("status") == "success":
+                        minutes = prediction["predicted_minutes"]
+                        eta = datetime.now() + timedelta(minutes=minutes)
+                        eta_str = eta.strftime("%m월 %d일 %H:%M 도착 예상")
 
-                if prev_status != norm_status:
-                    print(f"✅ [{invoice}] 상태 변경 감지: {prev_status} → {norm_status}")
+                    send_fcm_notification(
+                        token,
+                        "택배 상태 업데이트",
+                        f"송장번호 : {invoice}\n{norm_status} : {eta_str}",
+                        invoice=invoice,
+                        user_id=user_id
+                    )
+                    print(f"🔔 [{invoice}] FCM 알림 전송 완료: {norm_status}")
 
-                    if sub.get('alert_enabled', True):
-                        # 로컬 예측 호출
-                        predict_data = predict_arrival_internal(current_status, datetime.now().isoformat())
-                        if predict_data.get("status") == "success":
-                            minutes = predict_data["predicted_minutes"]
-                            eta = datetime.now() + timedelta(minutes=minutes)
-                            eta_str = eta.strftime("%m월 %d일 %H:%M 도착 예상")
-                        else:
-                            eta_str = "도착 시간 예측 불가"
-
-                        # FCM 알림 전송
-                        send_fcm_notification(
-                            token,
-                            "택배 상태 업데이트",
-                            f"송장번호 : {invoice}\n{norm_status} : {eta_str}",
-                            invoice=invoice,
-                            user_id=user_id
-                        )
-                        print(f"🔔 [{invoice}] FCM 알림 전송 완료: {norm_status}")
-
-                    else:
-                        eta_str = "스위치 OFF - FCM 미전송"
-                        doc_ref = db.collection("messages").document(f"{user_id}_{invoice}")
-
-                        doc = doc_ref.get()
-                        messages = doc.to_dict().get('messages', []) if doc.exists else []
-                        messages.append({
-                            'body': f"[알림 OFF] 송장번호 : {invoice} 상태변경 : {norm_status}",
-                            'timestamp': datetime.now().isoformat()
-                        })
-                        doc_ref.set({'messages': messages})
-                        print(f"☁️ [{invoice}] 메시지만 저장 (알림 OFF) - {norm_status}")
-
-                    # ✅ 상태 변경 후 저장
-                    sub['status'] = norm_status
-                    save_subscriptions_to_file()
                 else:
-                    print(f"ℹ️ [{invoice}] 상태 변화 없음: {norm_status}")
+                    doc_ref = db.collection("messages").document(f"{user_id}_{invoice}")
 
-            except Exception as e:
-                print(f"❗ [{invoice}] 예외 발생: {e}")
+                    doc = doc_ref.get()
+                    messages = doc.to_dict().get('messages', []) if doc.exists else []
+                    messages.append({
+                        'body': f"[알림 OFF] 송장번호 : {invoice} 상태변경 : {norm_status}",
+                        'timestamp': datetime.now().isoformat()
+                    })
+                    doc_ref.set({'messages': messages})
+                    print(f"☁️ [{invoice}] 메시지만 저장 (알림 OFF) - {norm_status}")
+
+                # ✅ 상태 변경 후 저장
+                sub['status'] = norm_status
+                save_subscriptions_to_file()
+            else:
+                print(f"ℹ️ [{invoice}] 상태 변화 없음: {norm_status}")
+
+        except Exception as e:
+            print(f"❗ [{invoice}] 예외 발생: {e}")
+
 
 
 if __name__ == '__main__':
-    print(f"🚀 서버 시작됨 - PID: {os.getpid()}")
-    load_subscriptions_from_file()
-    threading.Thread(target=check_tracking_status, daemon=True).start()
+    print(f"🚀 서버 시작 - PID: {os.getpid()}")  
+    load_subscriptions_from_file()  # 👈 원래 로컬 파일 로드
+    load_subscriptions_from_firestore()  # 👈 Firestore로도 로드
+
+    from apscheduler.schedulers.background import BackgroundScheduler
+    scheduler = BackgroundScheduler()
+    scheduler.add_job(check_tracking_status, 'interval', minutes=5)
+    scheduler.start()
+
     app.run(debug=False, host='0.0.0.0', port=5000, use_reloader=False)
