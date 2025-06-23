@@ -318,8 +318,8 @@ def toggle_alert():
 @app.route('/get_current_statuses', methods=['GET'])
 def get_current_statuses():
     try:
-        with open(SUBSCRIPTIONS_FILE, 'r', encoding='utf-8') as f:
-            data = json.load(f)
+        subscriptions_ref = db.collection("subscriptions").stream()
+        data = [doc.to_dict() for doc in subscriptions_ref]
         return jsonify({'status': 'success', 'subscriptions': data})
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
