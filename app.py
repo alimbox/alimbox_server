@@ -18,9 +18,12 @@ load_dotenv()
 
 TRACKER_CLIENT_ID = os.environ.get("TRACKER_CLIENT_ID")
 TRACKER_CLIENT_SECRET = os.environ.get("TRACKER_CLIENT_SECRET")
-FIREBASE_CREDENTIALS = os.environ.get("FIREBASE_CREDENTIALS")
 
-cred = credentials.Certificate(FIREBASE_CREDENTIALS)
+import json
+
+FIREBASE_CREDENTIALS = os.environ.get("FIREBASE_CREDENTIALS")  # 원문 JSON
+firebase_creds = json.loads(FIREBASE_CREDENTIALS)               # 원문 -> dict
+cred = credentials.Certificate(firebase_creds)                  # dict로 생성
 firebase_admin.initialize_app(cred)
 
 SUBSCRIPTIONS_FILE = os.path.join('subscriptdata', 'subscriptions.json')
