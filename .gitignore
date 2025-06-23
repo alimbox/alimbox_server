@@ -29,3 +29,6 @@ venv/
 # 기타 개발용 파일
 *.swp
 *.swo
+
+# 로컬 저장된 알림 메시지 파일
+subscriptdata/

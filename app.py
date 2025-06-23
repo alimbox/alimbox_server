@@ -276,10 +276,8 @@ def unsubscribe_alert():
         save_subscriptions_to_file()
 
         # ✅ 메시지 파일도 함께 삭제
-        message_file_path = os.path.join(
-            'C:/Users/Administrator/Desktop/alimbox/배송 예시 데이터서버구축/flask_test/subscriptmessage',
-            f'{user_id}_{invoice}.json'
-        )
+        message_file_path = os.path.join('subscriptdata', 'subscriptmessage', f'{user_id}_{invoice}.json')
+        os.makedirs(os.path.dirname(message_file_path), exist_ok=True)  # 디렉토리 생성
         if os.path.exists(message_file_path):
             os.remove(message_file_path)
             print(f"🗑️ 메시지 파일 삭제 완료: {message_file_path}")
@@ -328,10 +326,8 @@ def get_alert_messages():
     if not invoice or not user_id:
         return jsonify({'status': 'fail', 'message': 'invoice 또는 user_id가 없습니다.'}), 400
 
-    message_file_path = os.path.join(
-        'C:/Users/Administrator/Desktop/alimbox/배송 예시 데이터서버구축/flask_test/subscriptmessage',
-        f'{user_id}_{invoice}.json'
-    )
+    message_file_path = os.path.join('subscriptdata', 'subscriptmessage', f'{user_id}_{invoice}.json')
+    os.makedirs(os.path.dirname(message_file_path), exist_ok=True)
 
     if not os.path.exists(message_file_path):
         return jsonify({'status': 'success', 'messages': []})
@@ -361,8 +357,8 @@ def send_fcm_notification(token, title, body, invoice=None, user_id=None):
 
         # 2. 메시지 기록 저장
         if invoice and user_id:
-            folder = r"C:/Users/Administrator/Desktop/alimbox/배송 예시 데이터서버구축/flask_test/subscriptmessage"  # ✅ 정확한 경로
-            os.makedirs(folder, exist_ok=True)
+            folder = os.path.join('subscriptdata', 'subscriptmessage')
+            os.makedirs(folder, exist_ok=True)  # 폴더 없으면 생성
             filename = f"{user_id}_{invoice}.json"
             filepath = os.path.join(folder, filename)
 
@@ -493,7 +489,7 @@ def check_tracking_status():
                     else:
                         # ✅ 알림 OFF 상태일 때 메시지만 저장
                         eta_str = "스위치 OFF - FCM 미전송"
-                        folder = r"C:/Users/Administrator/Desktop/alimbox/배송 예시 데이터서버구축/flask_test/subscriptmessage"
+                        folder = os.path.join('subscriptdata', 'subscriptmessage')
                         os.makedirs(folder, exist_ok=True)
                         filename = f"{user_id}_{invoice}.json"
                         filepath = os.path.join(folder, filename)
