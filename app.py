@@ -402,19 +402,23 @@ def check_tracking_status():
     print(f"🧠 PID: {os.getpid()} - 배송 상태 체크 스레드 시작됨")
     while True:
         time.sleep(300)  # 5분마다 실행
-        print("🔄 배송 상태 확인 시작...")
-
-        access_token = get_access_token(TRACKER_CLIENT_ID, TRACKER_CLIENT_SECRET)
+        print("\n🔄 배송 상태 확인 시작...")
+        try:
+            access_token = get_access_token(TRACKER_CLIENT_ID, TRACKER_CLIENT_SECRET)
+            print(f"✅ Access Token 생성 성공: {access_token[:10]}...")  # 첫 10글자만 출력
+        except Exception as e:
+            print(f"❗ Access Token 생성 실패: {e}")
+            continue
 
         for sub in alert_subscriptions:
-            invoice = sub['invoice']
-            token = sub['token']
-            user_id = sub['user_id']
+            invoice = sub.get('invoice')
+            token = sub.get('token')
+            user_id = sub.get('user_id')
             prev_status = sub.get('status', '')
             carrier_id = sub.get('carrier_id')
 
             if not carrier_id:
-                print(f"❗ carrierId 없음 - {invoice}")
+                print(f"❗ carrierId 없음 - 송장번호: {invoice}")
                 continue
 
             try:
@@ -440,23 +444,33 @@ def check_tracking_status():
                     headers=headers,
                     json={'query': query, 'variables': variables}
                 )
+                
                 if response.status_code != 200:
+                    print(f"❌ [{invoice}] HTTP Status: {response.status_code}")
+                    print(f"❌ [{invoice}] 원인 추정: {response.text}")
                     continue
 
-                result = response.json()
+                try:
+                    result = response.json()
+                except Exception as e:
+                    print(f"❗ [{invoice}] JSON 파싱 실패: {e}")
+                    continue
+
                 if 'errors' in result:
-                    print(f"❗ GraphQL 오류 발생 - {invoice}: {result['errors']}")
+                    print(f"❗ [{invoice}] GraphQL 오류 발생: {result['errors']}")
                     continue
                 if 'data' not in result or not result['data'].get('track'):
-                    print(f"❗ 데이터 없음 또는 잘못된 응답 - {invoice}: {json.dumps(result, ensure_ascii=False)}")
+                    print(f"❗ [{invoice}] 데이터 누락 또는 잘못된 응답: {json.dumps(result, ensure_ascii=False)}")
                     continue
 
                 current_status = result['data']['track']['lastEvent']['status']['name']
                 norm_status = normalize_status(current_status)
 
                 if prev_status != norm_status:
+                    print(f"✅ [{invoice}] 상태 변경 감지: {prev_status} → {norm_status}")
+
                     if sub.get('alert_enabled', True):
-                        # ✅ 로컬 예측 호출
+                        # 로컬 예측 호출
                         predict_data = predict_arrival_internal(current_status, datetime.now().isoformat())
                         if predict_data.get("status") == "success":
                             minutes = predict_data["predicted_minutes"]
@@ -465,7 +479,7 @@ def check_tracking_status():
                         else:
                             eta_str = "도착 시간 예측 불가"
 
-                        # ✅ FCM 알림 전송
+                        # FCM 알림 전송
                         send_fcm_notification(
                             token,
                             "택배 상태 업데이트",
@@ -473,8 +487,9 @@ def check_tracking_status():
                             invoice=invoice,
                             user_id=user_id
                         )
+                        print(f"🔔 [{invoice}] FCM 알림 전송 완료: {norm_status}")
+
                     else:
-                        # ✅ 알림 OFF 상태일 때 메시지만 저장
                         eta_str = "스위치 OFF - FCM 미전송"
                         doc_ref = db.collection("messages").document(f"{user_id}_{invoice}")
 
@@ -485,14 +500,16 @@ def check_tracking_status():
                             'timestamp': datetime.now().isoformat()
                         })
                         doc_ref.set({'messages': messages})
-                        print(f"☁️ Firestore 메시지 저장 완료 (알림 OFF) → {user_id}_{invoice}")
+                        print(f"☁️ [{invoice}] 메시지만 저장 (알림 OFF) - {norm_status}")
 
                     # ✅ 상태 변경 후 저장
                     sub['status'] = norm_status
                     save_subscriptions_to_file()
+                else:
+                    print(f"ℹ️ [{invoice}] 상태 변화 없음: {norm_status}")
 
             except Exception as e:
-                print(f"❗ 예외 발생 - {invoice}: {e}")
+                print(f"❗ [{invoice}] 예외 발생: {e}")
 
 
 if __name__ == '__main__':
