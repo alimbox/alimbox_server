@@ -20,7 +20,6 @@ TRACKER_CLIENT_ID = os.environ.get("TRACKER_CLIENT_ID")
 TRACKER_CLIENT_SECRET = os.environ.get("TRACKER_CLIENT_SECRET")
 FIREBASE_CREDENTIALS = os.environ.get("FIREBASE_CREDENTIALS")
 
-# Firebase Admin SDK 초기화
 cred = credentials.Certificate(FIREBASE_CREDENTIALS)
 firebase_admin.initialize_app(cred)
 
