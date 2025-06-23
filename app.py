@@ -60,6 +60,35 @@ def get_access_token(client_id, client_secret):
     response.raise_for_status()
     return response.json()["access_token"]
 
+def predict_arrival_internal(status, last_time_str):
+    try:
+        normalized_status = normalize_status(status)
+
+        with open('arrival_predictor.pkl', 'rb') as f:
+            model = pickle.load(f)
+        with open('status_mapping.pkl', 'rb') as f:
+            status_map = pickle.load(f)
+
+        if normalized_status not in status_map:
+            code = -1
+        else:
+            code = status_map[normalized_status]
+
+        predicted_minutes = model.predict(np.array([[code]]))[0]
+        last_time = datetime.fromisoformat(last_time_str)
+        arrival_time = last_time + timedelta(minutes=predicted_minutes)
+
+        base_date = arrival_time.date()
+        if base_date.weekday() == 6:
+            base_date += timedelta(days=1)
+
+        return {
+            "status": "success",
+            "predicted_minutes": round(predicted_minutes, 1),
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
 app = Flask(__name__)
 
 alert_subscriptions = []
@@ -426,7 +455,6 @@ def check_tracking_status():
                     headers=headers,
                     json={'query': query, 'variables': variables}
                 )
-
                 if response.status_code != 200:
                     continue
 
@@ -434,7 +462,6 @@ def check_tracking_status():
                 if 'errors' in result:
                     print(f"❗ GraphQL 오류 발생 - {invoice}: {result['errors']}")
                     continue
-
                 if 'data' not in result or not result['data'].get('track'):
                     print(f"❗ 데이터 없음 또는 잘못된 응답 - {invoice}: {json.dumps(result, ensure_ascii=False)}")
                     continue
@@ -446,24 +473,16 @@ def check_tracking_status():
                     eta_str = ""
 
                     if sub.get('alert_enabled', True):
-                        # 예측 결과 받아오기
-                        predict_response = requests.post(
-                            "http://localhost:5000/predict_arrival",
-                            json={"status": current_status, "last_time": datetime.now().isoformat()}
-                        )
-
-                        if predict_response.status_code == 200:
-                            predict_data = predict_response.json()
-                            if predict_data['status'] == 'success':
-                                minutes = predict_data['predicted_minutes']
-                                eta = datetime.now() + timedelta(minutes=minutes)
-                                eta_str = eta.strftime('%m월 %d일 %H:%M 도착 예상')
-                            else:
-                                eta_str = "도착 시간 예측 불가"
+                        # ✅ 로컬 예측 함수 호출
+                        predict_data = predict_arrival_internal(current_status, datetime.now().isoformat())
+                        if predict_data.get("status") == "success":
+                            minutes = predict_data["predicted_minutes"]
+                            eta = datetime.now() + timedelta(minutes=minutes)
+                            eta_str = eta.strftime("%m월 %d일 %H:%M 도착 예상")
                         else:
-                            eta_str = "예측 실패"
+                            eta_str = "도착 시간 예측 불가"
 
-                        # FCM 알림 전송
+                        # ✅ FCM 알림 전송
                         send_fcm_notification(
                             token,
                             "택배 상태 업데이트",
@@ -472,7 +491,7 @@ def check_tracking_status():
                             user_id=user_id
                         )
                     else:
-                        # 알림 꺼진 경우 메시지만 저장
+                        # ✅ 알림 OFF 상태일 때 메시지만 저장
                         eta_str = "스위치 OFF - FCM 미전송"
                         folder = r"C:/Users/Administrator/Desktop/alimbox/배송 예시 데이터서버구축/flask_test/subscriptmessage"
                         os.makedirs(folder, exist_ok=True)
@@ -486,7 +505,6 @@ def check_tracking_status():
                                     messages = json.load(f).get('messages', [])
                                 except:
                                     messages = []
-
                         messages.append({
                             'body': f"[알림 OFF] 송장번호 : {invoice} 상태변경 : {norm_status}",
                             'timestamp': datetime.now().isoformat()
@@ -497,12 +515,13 @@ def check_tracking_status():
 
                         print(f"📝 (알림OFF) 메시지 저장 완료 → {filepath}")
 
-                    # ✅ 상태 업데이트 및 저장
+                    # ✅ 상태 변경 후 저장
                     sub['status'] = norm_status
                     save_subscriptions_to_file()
 
             except Exception as e:
                 print(f"❗ 예외 발생 - {invoice}: {e}")
+
 if __name__ == '__main__':
     print(f"🚀 서버 시작됨 - PID: {os.getpid()}")
     load_subscriptions_from_file()
