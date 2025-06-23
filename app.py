@@ -1,4 +1,5 @@
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 import json
 import os
 from datetime import datetime, timedelta
@@ -97,6 +98,7 @@ def predict_arrival_internal(status, last_time_str):
         return {"status": "error", "message": str(e)}
 
 app = Flask(__name__)
+CORS(app, origins=["https://alimbox.com"])
 
 alert_subscriptions = []
 
