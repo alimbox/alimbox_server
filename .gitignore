@@ -1,0 +1,31 @@
+# 비밀 파일
+.env
+firebase_service_account.json
+
+# Python 생성 파일
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# 개발 도구 관련 파일
+.vscode/
+.idea/
+.DS_Store
+
+# 로컬 데이터 파일
+data/
+subscriptdata/
+*.log
+*.sqlite3
+
+# 가상환경
+venv/
+.venv/
+
+# pytest 캐시
+.pytest_cache/
+
+# 기타 개발용 파일
+*.swp
+*.swo
