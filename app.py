@@ -11,8 +11,7 @@ import requests
 import base64
 
 import firebase_admin
-from firebase_admin import credentials, messaging
-
+from firebase_admin import credentials, messaging, firestore
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -26,36 +25,33 @@ firebase_creds = json.loads(FIREBASE_CREDENTIALS)               # 원문 -> dict
 cred = credentials.Certificate(firebase_creds)                  # dict로 생성
 firebase_admin.initialize_app(cred)
 
+db = firestore.client()
+
 SUBSCRIPTIONS_FILE = os.path.join('subscriptdata', 'subscriptions.json')
 
 def load_subscriptions_from_file():
     global alert_subscriptions
+    alert_subscriptions = []
     try:
-        if os.path.exists(SUBSCRIPTIONS_FILE):
-            with open(SUBSCRIPTIONS_FILE, 'r', encoding='utf-8') as f:
-                alert_subscriptions = json.load(f)
-                for sub in alert_subscriptions:
-                    if 'alert_enabled' not in sub:
-                        sub['alert_enabled'] = True
-                print(f"📂 구독 정보 로드 완료: {len(alert_subscriptions)}개")
-        else:
-            # ✅ 디렉토리 생성
-            os.makedirs(os.path.dirname(SUBSCRIPTIONS_FILE), exist_ok=True)
-
-            # ✅ 빈 파일 생성
-            alert_subscriptions = []
-            with open(SUBSCRIPTIONS_FILE, 'w', encoding='utf-8') as f:
-                json.dump(alert_subscriptions, f, ensure_ascii=False, indent=2)
-
-            print(f"✅ 구독 파일 생성 완료: {SUBSCRIPTIONS_FILE}")
+        subscriptions_ref = db.collection("subscriptions")
+        for doc in subscriptions_ref.stream():
+            data = doc.to_dict()
+            alert_subscriptions.append(data)
+        print(f"📂 Firestore 구독 정보 로드 완료: {len(alert_subscriptions)}개")
     except Exception as e:
         alert_subscriptions = []
-        print(f"❗ 구독 파일 로드 실패: {e}")
+        print(f"❗ Firestore 구독 로드 실패: {e}")
 
 def save_subscriptions_to_file():
-    with open(SUBSCRIPTIONS_FILE, 'w', encoding='utf-8') as f:
-        json.dump(alert_subscriptions, f, ensure_ascii=False, indent=2)
-        print(f"💾 구독 정보 저장 완료: {len(alert_subscriptions)}개")
+    try:
+        # 전체 alert_subscriptions를 Firestore로 저장
+        for sub in alert_subscriptions:
+            doc_ref = db.collection("subscriptions").document(f"{sub['user_id']}_{sub['invoice']}")
+            doc_ref.set(sub)  # Firestore 저장
+        print(f"☁️ Firestore 구독 정보 저장 완료: {len(alert_subscriptions)}개")
+    except Exception as e:
+        print(f"❗ Firestore 저장 실패: {e}")
+
 
 # 🔐 Step 1. access_token 발급 함수
 def get_access_token(client_id, client_secret):
@@ -255,7 +251,17 @@ def subscribe_alert():
             'alert_enabled': True
         })
 
-        save_subscriptions_to_file()
+        doc_ref = db.collection("subscriptions").document(f"{user_id}_{invoice}")
+        doc_ref.set({
+              "invoice": invoice,
+              "user_id": user_id,
+              "token": token,
+              "carrier_id": carrier_id,
+              "status": status,
+              "subscribed_at": datetime.now().isoformat(),
+              "alert_enabled": True
+        })
+
 
         print(f"✅ 등록 완료 → 현재 구독 수: {len(alert_subscriptions)}")
 
@@ -267,7 +273,6 @@ def subscribe_alert():
 @app.route('/unsubscribe_alert', methods=['POST'])
 def unsubscribe_alert():
     global alert_subscriptions
-
     try:
         data = request.get_json()
         invoice = data.get('invoice')
@@ -276,26 +281,16 @@ def unsubscribe_alert():
         if not invoice or not user_id:
             return jsonify({'status': 'fail', 'message': 'invoice 또는 user_id가 없습니다.'}), 400
 
-        print(f"🔕 알림 해제 요청: invoice={invoice}, user_id={user_id}")
-        print(f"🧾 삭제 전 총 구독 수: {len(alert_subscriptions)}")
-
         alert_subscriptions = [
             sub for sub in alert_subscriptions
             if not (sub['invoice'] == invoice and sub['user_id'] == user_id)
         ]
-
         save_subscriptions_to_file()
 
-        # ✅ 메시지 파일도 함께 삭제
-        message_file_path = os.path.join('subscriptdata', 'subscriptmessage', f'{user_id}_{invoice}.json')
-        os.makedirs(os.path.dirname(message_file_path), exist_ok=True)  # 디렉토리 생성
-        if os.path.exists(message_file_path):
-            os.remove(message_file_path)
-            print(f"🗑️ 메시지 파일 삭제 완료: {message_file_path}")
-        else:
-            print(f"⚠️ 메시지 파일 없음: {message_file_path}")
-
-        print(f"✅ 삭제 후 총 구독 수: {len(alert_subscriptions)}")
+        # ✅ Firestore 메시지도 삭제
+        doc_ref = db.collection("messages").document(f"{user_id}_{invoice}")
+        doc_ref.delete()
+        print(f"☁️ Firestore 메시지 삭제 완료: {user_id}_{invoice}")
 
         return jsonify({'status': 'success', 'message': '알림 해제 완료'}), 200
 
@@ -337,59 +332,40 @@ def get_alert_messages():
     if not invoice or not user_id:
         return jsonify({'status': 'fail', 'message': 'invoice 또는 user_id가 없습니다.'}), 400
 
-    message_file_path = os.path.join('subscriptdata', 'subscriptmessage', f'{user_id}_{invoice}.json')
-    os.makedirs(os.path.dirname(message_file_path), exist_ok=True)
-
-    if not os.path.exists(message_file_path):
-        return jsonify({'status': 'success', 'messages': []})
-
     try:
-        with open(message_file_path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-        return jsonify({'status': 'success', 'messages': [msg['body'] for msg in data.get('messages', [])]})
+        doc_ref = db.collection("messages").document(f"{user_id}_{invoice}")
+        doc = doc_ref.get()
+        if doc.exists:
+            messages = [msg['body'] for msg in doc.to_dict().get('messages', [])]
+        else:
+            messages = []
+        return jsonify({'status': 'success', 'messages': messages})
     except Exception as e:
-        return jsonify({'status': 'error', 'message': f'파일 읽기 실패: {str(e)}'}), 500
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 
 def send_fcm_notification(token, title, body, invoice=None, user_id=None):
     try:
-        # 1. FCM 메시지 전송
+        # FCM 메시지 전송
         message = messaging.Message(
-            notification=messaging.Notification(
-                title=title,
-                body=body,
-            ),
+            notification=messaging.Notification(title=title, body=body),
             token=token,
-            data={  # ✅ 여기가 핵심
-            }
+            data={}
         )
         response = messaging.send(message)
         print(f"🔔 FCM 전송 성공: {response}")
 
-        # 2. 메시지 기록 저장
+        # 메시지 Firestore 저장
         if invoice and user_id:
-            folder = os.path.join('subscriptdata', 'subscriptmessage')
-            os.makedirs(folder, exist_ok=True)
-            filename = f"{user_id}_{invoice}.json"
-            filepath = os.path.join(folder, filename)
-
-            messages = []
-            if os.path.exists(filepath):
-                with open(filepath, encoding='utf-8') as f:
-                    try:
-                        messages = json.load(f).get('messages', [])
-                    except:
-                        messages = []
-
+            doc_ref = db.collection("messages").document(f"{user_id}_{invoice}")
+            doc = doc_ref.get()
+            messages = doc.to_dict().get('messages', []) if doc.exists else []
             messages.append({
                 'body': body,
                 'timestamp': datetime.now().isoformat()
             })
-
-            with open(filepath, 'w', encoding='utf-8') as f:
-                json.dump({'messages': messages}, f, ensure_ascii=False, indent=2)
-
-            print(f"📝 메시지 저장 완료 → {filepath}")
+            doc_ref.set({'messages': messages})
+            print(f"☁️ Firestore 메시지 저장 완료 → {user_id}_{invoice}")
 
     except Exception as e:
         print(f"❗ FCM 전송 실패: {e}")
@@ -477,10 +453,8 @@ def check_tracking_status():
                 norm_status = normalize_status(current_status)
 
                 if prev_status != norm_status:
-                    eta_str = ""
-
                     if sub.get('alert_enabled', True):
-                        # ✅ 로컬 예측 함수 호출
+                        # ✅ 로컬 예측 호출
                         predict_data = predict_arrival_internal(current_status, datetime.now().isoformat())
                         if predict_data.get("status") == "success":
                             minutes = predict_data["predicted_minutes"]
@@ -500,27 +474,16 @@ def check_tracking_status():
                     else:
                         # ✅ 알림 OFF 상태일 때 메시지만 저장
                         eta_str = "스위치 OFF - FCM 미전송"
-                        folder = os.path.join('subscriptdata', 'subscriptmessage')
-                        os.makedirs(folder, exist_ok=True)
-                        filename = f"{user_id}_{invoice}.json"
-                        filepath = os.path.join(folder, filename)
+                        doc_ref = db.collection("messages").document(f"{user_id}_{invoice}")
 
-                        messages = []
-                        if os.path.exists(filepath):
-                            with open(filepath, encoding='utf-8') as f:
-                                try:
-                                    messages = json.load(f).get('messages', [])
-                                except:
-                                    messages = []
+                        doc = doc_ref.get()
+                        messages = doc.to_dict().get('messages', []) if doc.exists else []
                         messages.append({
                             'body': f"[알림 OFF] 송장번호 : {invoice} 상태변경 : {norm_status}",
                             'timestamp': datetime.now().isoformat()
                         })
-
-                        with open(filepath, 'w', encoding='utf-8') as f:
-                            json.dump({'messages': messages}, f, ensure_ascii=False, indent=2)
-
-                        print(f"📝 (알림OFF) 메시지 저장 완료 → {filepath}")
+                        doc_ref.set({'messages': messages})
+                        print(f"☁️ Firestore 메시지 저장 완료 (알림 OFF) → {user_id}_{invoice}")
 
                     # ✅ 상태 변경 후 저장
                     sub['status'] = norm_status
@@ -528,6 +491,7 @@ def check_tracking_status():
 
             except Exception as e:
                 print(f"❗ 예외 발생 - {invoice}: {e}")
+
 
 if __name__ == '__main__':
     print(f"🚀 서버 시작됨 - PID: {os.getpid()}")
