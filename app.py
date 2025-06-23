@@ -30,16 +30,27 @@ SUBSCRIPTIONS_FILE = os.path.join('subscriptdata', 'subscriptions.json')
 
 def load_subscriptions_from_file():
     global alert_subscriptions
-    if os.path.exists(SUBSCRIPTIONS_FILE):
-        with open(SUBSCRIPTIONS_FILE, 'r', encoding='utf-8') as f:
-            alert_subscriptions = json.load(f)
-            # ✅ 누락 필드 보완
-            for sub in alert_subscriptions:
-                if 'alert_enabled' not in sub:
-                    sub['alert_enabled'] = True
-            print(f"📂 구독 정보 로드 완료: {len(alert_subscriptions)}개")
-    else:
+    try:
+        if os.path.exists(SUBSCRIPTIONS_FILE):
+            with open(SUBSCRIPTIONS_FILE, 'r', encoding='utf-8') as f:
+                alert_subscriptions = json.load(f)
+                for sub in alert_subscriptions:
+                    if 'alert_enabled' not in sub:
+                        sub['alert_enabled'] = True
+                print(f"📂 구독 정보 로드 완료: {len(alert_subscriptions)}개")
+        else:
+            # ✅ 디렉토리 생성
+            os.makedirs(os.path.dirname(SUBSCRIPTIONS_FILE), exist_ok=True)
+
+            # ✅ 빈 파일 생성
+            alert_subscriptions = []
+            with open(SUBSCRIPTIONS_FILE, 'w', encoding='utf-8') as f:
+                json.dump(alert_subscriptions, f, ensure_ascii=False, indent=2)
+
+            print(f"✅ 구독 파일 생성 완료: {SUBSCRIPTIONS_FILE}")
+    except Exception as e:
         alert_subscriptions = []
+        print(f"❗ 구독 파일 로드 실패: {e}")
 
 def save_subscriptions_to_file():
     with open(SUBSCRIPTIONS_FILE, 'w', encoding='utf-8') as f:
@@ -358,7 +369,7 @@ def send_fcm_notification(token, title, body, invoice=None, user_id=None):
         # 2. 메시지 기록 저장
         if invoice and user_id:
             folder = os.path.join('subscriptdata', 'subscriptmessage')
-            os.makedirs(folder, exist_ok=True)  # 폴더 없으면 생성
+            os.makedirs(folder, exist_ok=True)
             filename = f"{user_id}_{invoice}.json"
             filepath = os.path.join(folder, filename)
 
