@@ -513,12 +513,12 @@ def check_tracking_status():
 
 if __name__ == '__main__':
     print(f"🚀 서버 시작 - PID: {os.getpid()}")  
-    load_subscriptions_from_file()  # 👈 원래 로컬 파일 로드
-    load_subscriptions_from_firestore()  # 👈 Firestore로도 로드
+    load_subscriptions_from_file()
+    load_subscriptions_from_firestore()
+    print(f"👀 로드된 alert_subscriptions: {alert_subscriptions}")
 
     from apscheduler.schedulers.background import BackgroundScheduler
     scheduler = BackgroundScheduler()
     scheduler.add_job(check_tracking_status, 'interval', minutes=5)
     scheduler.start()
-
     app.run(debug=False, host='0.0.0.0', port=5000, use_reloader=False)
