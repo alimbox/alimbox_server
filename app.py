@@ -323,6 +323,12 @@ def toggle_alert():
             if sub['invoice'] == invoice and sub['user_id'] == user_id:
                 sub['alert_enabled'] = enabled
                 save_subscriptions_to_file()
+
+                # ✅ Firestore도 즉시 변경
+                doc_ref = db.collection("subscriptions").document(f"{user_id}_{invoice}")
+                doc_ref.update({"alert_enabled": enabled})
+                print(f"☁️ Firestore alert_enabled 변경 → {user_id}_{invoice}: {enabled}")
+
                 return jsonify({'status': 'success', 'message': '알림 설정 변경됨'})
 
         return jsonify({'status': 'fail', 'message': '구독 정보 없음'}), 404
