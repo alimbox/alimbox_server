@@ -335,6 +335,8 @@ def toggle_alert():
                 doc_ref.update({"alert_enabled": enabled})
                 print(f"☁️ Firestore alert_enabled 변경 → {user_id}_{invoice}: {enabled}")
 
+                print(f"✔️ toggle_alert 성공 - user_id: {user_id}, invoice: {invoice}, alert_enabled: {enabled}")
+
                 return jsonify({'status': 'success', 'message': '알림 설정 변경됨'})
 
         return jsonify({'status': 'fail', 'message': '구독 정보 없음'}), 404
