@@ -295,18 +295,24 @@ def unsubscribe_alert():
         if not invoice or not user_id:
             return jsonify({'status': 'fail', 'message': 'invoice 또는 user_id가 없습니다.'}), 400
 
+        # 로컬 구독 삭제
         alert_subscriptions = [
             sub for sub in alert_subscriptions
             if not (sub['invoice'] == invoice and sub['user_id'] == user_id)
         ]
         save_subscriptions_to_file()
 
+        # ✅ Firestore subscriptions 문서 삭제
+        doc_ref = db.collection("subscriptions").document(f"{user_id}_{invoice}")
+        doc_ref.delete()
+        print(f"☁️ Firestore 구독 문서 삭제 완료: {user_id}_{invoice}")
+
         # ✅ Firestore 메시지도 삭제
         doc_ref = db.collection("messages").document(f"{user_id}_{invoice}")
         doc_ref.delete()
         print(f"☁️ Firestore 메시지 삭제 완료: {user_id}_{invoice}")
 
-        return jsonify({'status': 'success', 'message': '알림 해제 완료'}), 200
+        return jsonify({'status': 'success', 'message': '알림 구독 삭제 완료'}), 200
 
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
