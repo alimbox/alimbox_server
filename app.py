@@ -427,6 +427,7 @@ def detect_carrier(tracking_number, access_token):
 def check_tracking_status():
     """5분마다 실행될 로직"""
     print(f"🧠 PID: {os.getpid()} - 배송 상태 체크 호출")
+    load_subscriptions_from_firestore()  # ✅ 최신 데이터를 매번 로드
     try:
         access_token = get_access_token(TRACKER_CLIENT_ID, TRACKER_CLIENT_SECRET)
         print(f"✅ Access Token 생성 성공: {access_token[:10]}...")
