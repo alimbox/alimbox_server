@@ -544,5 +544,6 @@ scheduler.add_job(check_tracking_status, 'interval', minutes=5)
 scheduler.start()
 
 if __name__ == '__main__':
-    print(f"🚀 서버 시작 - PID: {os.getpid()}")
-    app.run(debug=False, host='0.0.0.0', port=5000, use_reloader=False)
+    port = int(os.environ.get("PORT", 5000))  # Render가 제공하는 포트 환경변수 사용
+    print(f"🚀 서버 시작 - PID: {os.getpid()}, 포트: {port}")
+    app.run(debug=False, host='0.0.0.0', port=port, use_reloader=False)
