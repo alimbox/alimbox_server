@@ -428,6 +428,7 @@ def check_tracking_status():
     """5분마다 실행될 로직"""
     print(f"🧠 PID: {os.getpid()} - 배송 상태 체크 호출")
     load_subscriptions_from_firestore()  # ✅ 최신 데이터를 매번 로드
+
     try:
         access_token = get_access_token(TRACKER_CLIENT_ID, TRACKER_CLIENT_SECRET)
         print(f"✅ Access Token 생성 성공: {access_token[:10]}...")
@@ -487,17 +488,24 @@ def check_tracking_status():
                 print(f"✅ [{invoice}] 상태 변경 감지: {prev_status} → {norm_status}")
 
                 if sub.get('alert_enabled', True):
-                    prediction = predict_arrival_internal(current_status, datetime.now().isoformat())
-                    eta_str = "도착 시간 예측 불가"
-                    if prediction.get("status") == "success":
-                        minutes = prediction["predicted_minutes"]
-                        eta = datetime.now() + timedelta(minutes=minutes)
-                        eta_str = eta.strftime("%m월 %d일 %H:%M 도착 예상")
+                    if norm_status in ['배송완료', '배송 완료', '배달완료', '배달 완료']:
+                        now = datetime.now().strftime("%m월 %d일 %H:%M")
+                        message_body = f"{now} 배송완료 되었습니다."
+                    else:
+                        prediction = predict_arrival_internal(current_status, datetime.now().isoformat())
+                        if prediction.get("status") == "success":
+                            minutes = prediction["predicted_minutes"]
+                            eta = datetime.now() + timedelta(minutes=minutes)
+                            eta_str = eta.strftime("%m월 %d일 %H:%M 도착 예상")
+                        else:
+                            eta_str = "도착 시간 예측 불가"
+
+                        message_body = f"송장번호 : {invoice}\n{norm_status} : {eta_str}"
 
                     send_fcm_notification(
                         token,
                         "택배 상태 업데이트",
-                        f"송장번호 : {invoice}\n{norm_status} : {eta_str}",
+                        message_body,
                         invoice=invoice,
                         user_id=user_id
                     )
@@ -505,7 +513,6 @@ def check_tracking_status():
 
                 else:
                     doc_ref = db.collection("messages").document(f"{user_id}_{invoice}")
-
                     doc = doc_ref.get()
                     messages = doc.to_dict().get('messages', []) if doc.exists else []
                     messages.append({
