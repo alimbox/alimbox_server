@@ -311,6 +311,9 @@ def unsubscribe_alert():
         doc_ref = db.collection("messages").document(f"{user_id}_{invoice}")
         doc_ref.delete()
         print(f"☁️ Firestore 메시지 삭제 완료: {user_id}_{invoice}")
+        
+        load_subscriptions_from_file()
+        load_subscriptions_from_firestore()
 
         return jsonify({'status': 'success', 'message': '알림 구독 삭제 완료'}), 200
 
