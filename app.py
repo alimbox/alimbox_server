@@ -487,6 +487,10 @@ def check_tracking_status():
             if prev_status != norm_status:
                 print(f"✅ [{invoice}] 상태 변경 감지: {prev_status} → {norm_status}")
 
+                if prev_status in ['배송완료', '배달완료'] and norm_status in ['배송완료', '배달완료']:
+                    print(f"🚫 [{invoice}] 이미 배송완료 상태, 중복 알림 생략")
+                    continue
+
                 if sub.get('alert_enabled', True):
                     if norm_status in ['배송완료', '배송 완료', '배달완료', '배달 완료']:
                         try:
