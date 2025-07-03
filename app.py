@@ -489,8 +489,14 @@ def check_tracking_status():
 
                 if sub.get('alert_enabled', True):
                     if norm_status in ['배송완료', '배송 완료', '배달완료', '배달 완료']:
-                        now = datetime.now().strftime("%m월 %d일 %H:%M")
-                        message_body = f"{now} 배송완료 되었습니다."
+                        try:
+                            event_time_str = result['data']['track']['lastEvent']['time']
+                            event_time = datetime.fromisoformat(event_time_str)
+                            time_str = event_time.strftime("%m월 %d일 %H:%M")
+                            message_body = f"{time_str} 배송완료 되었습니다."
+                        except Exception as e:
+                            print(f"❗ 배송완료 시간 파싱 실패: {e}")
+                            message_body = f"배송완료 되었습니다."
                     else:
                         prediction = predict_arrival_internal(current_status, datetime.now().isoformat())
                         if prediction.get("status") == "success":
