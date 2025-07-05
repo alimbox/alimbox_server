@@ -1,19 +1,23 @@
+# Flutter 빌드 폴더
+build/
+
 # 비밀 파일
 .env
 firebase_service_account.json
+android/key.properties
+android/alimbox-key.jks
 
-# Python 생성 파일
+# Python
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
+*.py[cod]
 
-# 개발 도구 관련 파일
+# 개발 도구
 .vscode/
 .idea/
 .DS_Store
+Thumbs.db
 
-# 로컬 데이터 파일
+# 로컬 데이터
 data/
 subscriptdata/
 *.log
@@ -23,12 +27,9 @@ subscriptdata/
 venv/
 .venv/
 
-# pytest 캐시
+# 테스트
 .pytest_cache/
 
-# 기타 개발용 파일
+# 기타 임시 파일
 *.swp
 *.swo
-
-# 로컬 저장된 알림 메시지 파일
-subscriptdata/
