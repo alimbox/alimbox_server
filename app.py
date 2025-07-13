@@ -145,13 +145,27 @@ def save_delivery():
         status_name = last_event.get('status', {}).get('name', '')
         normalized_status = normalize_status(status_name)
         invoice = data.get('invoice', 'unknown')
+        carrier_id = data.get('carrier_id', None)
 
         print(f"📦 원본 상태: {status_name}")
         print(f"🔧 정규화 상태: {normalized_status}")
-        print(f"🔎 lastEvent 전체 내용:\n{json.dumps(last_event, ensure_ascii=False, indent=2)}")
+        print(f"📦 carrier_id: {carrier_id}")
 
-        if normalized_status != '배송완료':
-            return jsonify({'status': 'ignored', 'message': '배송완료된 건만 저장합니다.'}), 200
+        # ✅ 배송완료 상태이면 delivery_stats 기록
+        if normalized_status in ['배송완료', '배송 완료', '배달완료', '배달 완료']:
+            if carrier_id:
+                try:
+                    doc_ref = db.collection('delivery_stats').document(carrier_id)
+                    doc = doc_ref.get()
+                    if doc.exists:
+                        current_count = doc.to_dict().get('completed_count', 0)
+                        doc_ref.update({'completed_count': current_count + 1})
+                        print(f"📈 delivery_stats 업데이트: {carrier_id} → {current_count + 1}")
+                    else:
+                        doc_ref.set({'completed_count': 1})
+                        print(f"📈 delivery_stats 신규 등록: {carrier_id} → 1")
+                except Exception as e:
+                    print(f"❗ Firestore delivery_stats 저장 실패: {e}")
 
         folder_path = os.path.join(os.getcwd(), 'data')
         os.makedirs(folder_path, exist_ok=True)
@@ -169,7 +183,8 @@ def save_delivery():
         with open(file_path, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
 
-        return jsonify({'status': 'success', 'message': '배송 데이터 저장 완료!', 'file': file_path})
+        return jsonify({'status': 'success', 'message': '배송 데이터 저장 및 delivery_stats 기록 완료!', 'file': file_path})
+
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
@@ -494,18 +509,6 @@ def check_tracking_status():
                             event_time = datetime.fromisoformat(event_time_str)
                             time_str = event_time.strftime("%m월 %d일 %H:%M")
                             message_body = f"{time_str} 배송완료 되었습니다."
-
-                            # 🚀 배송완료 시 carrier_id별 Firestore 통계 저장
-                            if carrier_id:
-                                doc_ref = db.collection('delivery_stats').document(carrier_id)
-                                doc = doc_ref.get()
-                                if doc.exists:
-                                    current_count = doc.to_dict().get('completed_count', 0)
-                                    doc_ref.update({'completed_count': current_count + 1})
-                                    print(f"📈 Firestore 업데이트 → {carrier_id}: {current_count + 1}")
-                                else:
-                                    doc_ref.set({'completed_count': 1})
-                                    print(f"📈 Firestore 신규 등록 → {carrier_id}: 1")
                         except Exception as e:
                             print(f"❗ 배송완료 시간 파싱 실패: {e}")
                             message_body = f"배송완료 되었습니다."
