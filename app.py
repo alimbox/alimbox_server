@@ -494,6 +494,18 @@ def check_tracking_status():
                             event_time = datetime.fromisoformat(event_time_str)
                             time_str = event_time.strftime("%m월 %d일 %H:%M")
                             message_body = f"{time_str} 배송완료 되었습니다."
+
+                            # 🚀 배송완료 시 carrier_id별 Firestore 통계 저장
+                            if carrier_id:
+                                doc_ref = db.collection('delivery_stats').document(carrier_id)
+                                doc = doc_ref.get()
+                                if doc.exists:
+                                    current_count = doc.to_dict().get('completed_count', 0)
+                                    doc_ref.update({'completed_count': current_count + 1})
+                                    print(f"📈 Firestore 업데이트 → {carrier_id}: {current_count + 1}")
+                                else:
+                                    doc_ref.set({'completed_count': 1})
+                                    print(f"📈 Firestore 신규 등록 → {carrier_id}: 1")
                         except Exception as e:
                             print(f"❗ 배송완료 시간 파싱 실패: {e}")
                             message_body = f"배송완료 되었습니다."
