@@ -151,10 +151,11 @@ def save_delivery():
         print(f"🔧 정규화 상태: {normalized_status}")
         print(f"📦 carrier_id: {carrier_id}")
 
-        # ✅ 배송완료 상태이면 delivery_stats 기록
+        # ✅ 배송완료 상태이면 delivery_stats + delivery_logs 기록
         if normalized_status in ['배송완료', '배송 완료', '배달완료', '배달 완료']:
             if carrier_id:
                 try:
+                    # delivery_stats 카운트 업데이트
                     doc_ref = db.collection('delivery_stats').document(carrier_id)
                     doc = doc_ref.get()
                     if doc.exists:
@@ -164,9 +165,21 @@ def save_delivery():
                     else:
                         doc_ref.set({'completed_count': 1})
                         print(f"📈 delivery_stats 신규 등록: {carrier_id} → 1")
-                except Exception as e:
-                    print(f"❗ Firestore delivery_stats 저장 실패: {e}")
 
+                    # delivery_logs에 송장번호 기록
+                    log_ref = db.collection('delivery_logs').document(f"{carrier_id}_{invoice}")
+                    log_ref.set({
+                        'carrier_id': carrier_id,
+                        'invoice': invoice,
+                        'status': normalized_status,
+                        'saved_at': datetime.now().isoformat()
+                    })
+                    print(f"📝 delivery_logs 저장 완료: {carrier_id}_{invoice}")
+
+                except Exception as e:
+                    print(f"❗ Firestore delivery_stats 또는 delivery_logs 저장 실패: {e}")
+
+        # 기존 로컬 파일 저장 로직
         folder_path = os.path.join(os.getcwd(), 'data')
         os.makedirs(folder_path, exist_ok=True)
 
