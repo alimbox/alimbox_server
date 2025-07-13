@@ -166,20 +166,21 @@ def save_delivery():
                         doc_ref.set({'completed_count': 1})
                         print(f"📈 delivery_stats 신규 등록: {carrier_id} → 1")
 
-                    # delivery_logs에 송장번호 기록
+                    # 🔔 delivery_logs에 전체 데이터 저장 (lastEvent + events)
                     log_ref = db.collection('delivery_logs').document(f"{carrier_id}_{invoice}")
                     log_ref.set({
                         'carrier_id': carrier_id,
                         'invoice': invoice,
-                        'status': normalized_status,
-                        'saved_at': datetime.now().isoformat()
+                        'lastEvent': last_event,
+                        'events': data.get('events', []),
+                        'timestamp': datetime.now().isoformat()
                     })
-                    print(f"📝 delivery_logs 저장 완료: {carrier_id}_{invoice}")
+                    print(f"📝 delivery_logs 전체 저장 완료: {carrier_id}_{invoice}")
 
                 except Exception as e:
                     print(f"❗ Firestore delivery_stats 또는 delivery_logs 저장 실패: {e}")
 
-        # 기존 로컬 파일 저장 로직
+        # 기존 로컬 파일 저장 로직 유지
         folder_path = os.path.join(os.getcwd(), 'data')
         os.makedirs(folder_path, exist_ok=True)
 
