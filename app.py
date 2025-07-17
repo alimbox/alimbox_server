@@ -171,6 +171,7 @@ def save_delivery():
         status_name = last_event.get('status', {}).get('name', '')
         normalized_status = normalize_status(status_name)
         invoice = data.get('invoice', 'unknown')
+        carrier_id = data.get('carrier_id', 'unknown')
 
         print(f"📦 원본 상태: {status_name}")
         print(f"🔧 정규화 상태: {normalized_status}")
