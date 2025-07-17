@@ -207,6 +207,7 @@ def predict_arrival():
         status = data.get('status')
         last_time_str = data.get('last_time')
         carrier_id = data.get('carrier_id')  # carrier_id 받기
+        print(f"🔔 [predict_arrival] 요청 carrier_id: {carrier_id}")
 
         if not status or not last_time_str:
             return jsonify({'status': 'fail', 'message': 'status 또는 last_time이 없습니다.'}), 400
