@@ -80,25 +80,23 @@ def get_access_token(client_id, client_secret):
     response.raise_for_status()
     return response.json()["access_token"]
 
-def predict_arrival_internal(status, last_time_str):
+def predict_arrival_internal(status, last_time_str, carrier_id=None):
     try:
         normalized_status = normalize_status(status)
 
-        with open('arrival_predictor.pkl', 'rb') as f:
-            model = pickle.load(f)
-        with open('status_mapping.pkl', 'rb') as f:
-            status_map = pickle.load(f)
+        # 🚀 carrier_id 기반 모델/매핑 불러오기
+        model, status_map = load_model_and_mapping(carrier_id)
+        if not model or not status_map:
+            return {"status": "error", "message": "모델 또는 매핑 로드 실패"}
 
-        if normalized_status not in status_map:
-            code = -1
-        else:
-            code = status_map[normalized_status]
-
+        code = status_map.get(normalized_status, -1)
         predicted_minutes = model.predict(np.array([[code]]))[0]
+
         last_time = datetime.fromisoformat(last_time_str)
         arrival_time = last_time + timedelta(minutes=predicted_minutes)
 
         base_date = arrival_time.date()
+        # 🔔 일요일이면 하루 추가
         if base_date.weekday() == 6:
             base_date += timedelta(days=1)
 
@@ -130,6 +128,34 @@ def normalize_status(status):
             return norm_status
     return status
 
+def load_model_and_mapping(carrier_id):
+    try:
+        if carrier_id == 'kr.coupangls':
+            with open('arrival_predictor_coupangls.pkl', 'rb') as f:
+                model = pickle.load(f)
+            with open('status_mapping_coupangls.pkl', 'rb') as f:
+                status_map = pickle.load(f)
+        elif carrier_id == 'kr.epost':
+            with open('arrival_predictor_epost.pkl', 'rb') as f:
+                model = pickle.load(f)
+            with open('status_mapping_epost.pkl', 'rb') as f:
+                status_map = pickle.load(f)
+        elif carrier_id == 'kr.hanjin':
+            with open('arrival_predictor_hanjin.pkl', 'rb') as f:
+                model = pickle.load(f)
+            with open('status_mapping_hanjin.pkl', 'rb') as f:
+                status_map = pickle.load(f)
+        else:
+            with open('arrival_predictor.pkl', 'rb') as f:
+                model = pickle.load(f)
+            with open('status_mapping.pkl', 'rb') as f:
+                status_map = pickle.load(f)
+        return model, status_map
+    except Exception as e:
+        print(f"❗ 모델/매핑 파일 로드 실패: {e}")
+        return None, None
+
+
 @app.route('/test', methods=['GET'])
 def test_api():
     return jsonify({'message': 'API 동작 확인 완료!', 'status': 'success'})
@@ -145,42 +171,14 @@ def save_delivery():
         status_name = last_event.get('status', {}).get('name', '')
         normalized_status = normalize_status(status_name)
         invoice = data.get('invoice', 'unknown')
-        carrier_id = data.get('carrier_id', None)
 
         print(f"📦 원본 상태: {status_name}")
         print(f"🔧 정규화 상태: {normalized_status}")
-        print(f"📦 carrier_id: {carrier_id}")
+        print(f"🔎 lastEvent 전체 내용:\n{json.dumps(last_event, ensure_ascii=False, indent=2)}")
 
-        # ✅ 배송완료 상태이면 delivery_stats + delivery_logs 기록
-        if normalized_status in ['배송완료', '배송 완료', '배달완료', '배달 완료']:
-            if carrier_id:
-                try:
-                    # delivery_stats 카운트 업데이트
-                    doc_ref = db.collection('delivery_stats').document(carrier_id)
-                    doc = doc_ref.get()
-                    if doc.exists:
-                        current_count = doc.to_dict().get('completed_count', 0)
-                        doc_ref.update({'completed_count': current_count + 1})
-                        print(f"📈 delivery_stats 업데이트: {carrier_id} → {current_count + 1}")
-                    else:
-                        doc_ref.set({'completed_count': 1})
-                        print(f"📈 delivery_stats 신규 등록: {carrier_id} → 1")
+        if normalized_status != '배송완료':
+            return jsonify({'status': 'ignored', 'message': '배송완료된 건만 저장합니다.'}), 200
 
-                    # 🔔 delivery_logs에 전체 데이터 저장 (lastEvent + events)
-                    log_ref = db.collection('delivery_logs').document(f"{carrier_id}_{invoice}")
-                    log_ref.set({
-                        'carrier_id': carrier_id,
-                        'invoice': invoice,
-                        'lastEvent': last_event,
-                        'events': data.get('events', []),
-                        'timestamp': datetime.now().isoformat()
-                    })
-                    print(f"📝 delivery_logs 전체 저장 완료: {carrier_id}_{invoice}")
-
-                except Exception as e:
-                    print(f"❗ Firestore delivery_stats 또는 delivery_logs 저장 실패: {e}")
-
-        # 기존 로컬 파일 저장 로직 유지
         folder_path = os.path.join(os.getcwd(), 'data')
         os.makedirs(folder_path, exist_ok=True)
 
@@ -197,8 +195,7 @@ def save_delivery():
         with open(file_path, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
 
-        return jsonify({'status': 'success', 'message': '배송 데이터 저장 및 delivery_stats 기록 완료!', 'file': file_path})
-
+        return jsonify({'status': 'success', 'message': '배송 데이터 저장 완료!', 'file': file_path})
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
@@ -208,16 +205,18 @@ def predict_arrival():
         data = request.get_json()
         status = data.get('status')
         last_time_str = data.get('last_time')
+        carrier_id = data.get('carrier_id')  # carrier_id 받기
 
         if not status or not last_time_str:
             return jsonify({'status': 'fail', 'message': 'status 또는 last_time이 없습니다.'}), 400
 
         normalized_status = normalize_status(status)
 
-        with open('arrival_predictor.pkl', 'rb') as f:
-            model = pickle.load(f)
-        with open('status_mapping.pkl', 'rb') as f:
-            status_map = pickle.load(f)
+        # 🚀 carrier_id 기준으로 pkl 불러오기
+        model, status_map = load_model_and_mapping(carrier_id)
+
+        if not model or not status_map:
+            return jsonify({'status': 'fail', 'message': '모델 또는 매핑 로드 실패'}), 500
 
         if normalized_status not in status_map:
             print(f"⚠️ 알 수 없는 상태: {normalized_status}, 기본값 처리")
@@ -527,7 +526,7 @@ def check_tracking_status():
                             print(f"❗ 배송완료 시간 파싱 실패: {e}")
                             message_body = f"배송완료 되었습니다."
                     else:
-                        prediction = predict_arrival_internal(current_status, datetime.now().isoformat())
+                        prediction = predict_arrival_internal(current_status, datetime.now().isoformat(), carrier_id)
                         if prediction.get("status") == "success":
                             minutes = prediction["predicted_minutes"]
                             eta = datetime.now() + timedelta(minutes=minutes)
