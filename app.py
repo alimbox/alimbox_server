@@ -254,6 +254,8 @@ def predict_arrival():
             0.0 if d.weekday() == 6 else round(weights[i], 4)
             for i, d in enumerate(graph_dates)
         ]
+        
+        print(f"🔎 predict_arrival 응답 데이터: predicted_minutes={predicted_minutes}")
 
         return jsonify({
             'status': 'success',
