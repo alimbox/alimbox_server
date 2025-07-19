@@ -567,12 +567,12 @@ def check_tracking_status():
                     print(f"☁️ [{invoice}] 메시지만 저장 (알림 OFF) - {norm_status}")
 
                 # ✅ 상태 변경 후 저장
-                sub['current_status'] = norm_status
-                sub['status'] = norm_status
+                sub['current_status'] = norm_status  # 내부 상태 추적용
+                sub['status'] = current_status       # Firestore에는 API 원본 이름 저장
                 doc_ref = db.collection("subscriptions").document(f"{user_id}_{invoice}")
                 doc_ref.update({
-                    "current_status": norm_status,
-                    "status": norm_status  # 💥 추가
+                    "current_status": norm_status,   # 내부 용도 (필요하면 유지)
+                    "status": current_status         # 🔔 앱에 보여줄 원본 상태 이름
                 })
                 print(f"☁️ Firestore current_status 업데이트 → {user_id}_{invoice}: {norm_status}")
 
