@@ -296,6 +296,7 @@ def subscribe_alert():
             'token': token,
             'carrier_id': carrier_id,
             'status': status,
+            'current_status': status,
             'subscribed_at': datetime.now().isoformat(),
             'alert_enabled': True
         })
@@ -307,6 +308,7 @@ def subscribe_alert():
               "token": token,
               "carrier_id": carrier_id,
               "status": status,
+              "current_status": status,
               "subscribed_at": datetime.now().isoformat(),
               "alert_enabled": True
         })
@@ -471,7 +473,7 @@ def check_tracking_status():
         invoice = sub.get('invoice')
         token = sub.get('token')
         user_id = sub.get('user_id')
-        prev_status = sub.get('status', '')
+        prev_status = sub.get('current_status', '')  # ✅ current_status 기준으로 비교
         carrier_id = sub.get('carrier_id')
 
         if not carrier_id:
@@ -486,6 +488,7 @@ def check_tracking_status():
                   status {
                     name
                   }
+                  time
                 }
               }
             }
@@ -564,7 +567,11 @@ def check_tracking_status():
                     print(f"☁️ [{invoice}] 메시지만 저장 (알림 OFF) - {norm_status}")
 
                 # ✅ 상태 변경 후 저장
-                sub['status'] = norm_status
+                sub['current_status'] = norm_status
+                doc_ref = db.collection("subscriptions").document(f"{user_id}_{invoice}")
+                doc_ref.update({"current_status": norm_status})
+                print(f"☁️ Firestore current_status 업데이트 → {user_id}_{invoice}: {norm_status}")
+
                 save_subscriptions_to_file()
             else:
                 print(f"ℹ️ [{invoice}] 상태 변화 없음: {norm_status}")
