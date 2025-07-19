@@ -82,7 +82,7 @@ def get_access_token(client_id, client_secret):
 
 def predict_arrival_internal(status, last_time_str, carrier_id=None):
     try:
-        normalized_status = normalize_status(status)
+        normalized_status = status.strip()
 
         # 🚀 carrier_id 기반 모델/매핑 불러오기
         model, status_map = load_model_and_mapping(carrier_id)
