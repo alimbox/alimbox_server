@@ -219,6 +219,9 @@ def predict_arrival():
 
         if not model or not status_map:
             return jsonify({'status': 'fail', 'message': '모델 또는 매핑 로드 실패'}), 500
+        
+        print(f"📦 predict_arrival - 받은 status: {status}, normalized_status: {normalized_status}")
+        print(f"📦 predict_arrival - status_map keys: {list(status_map.keys())}")
 
         if normalized_status not in status_map:
             print(f"⚠️ 알 수 없는 상태: {normalized_status}, 기본값 처리")
