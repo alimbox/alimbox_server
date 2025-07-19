@@ -544,7 +544,7 @@ def check_tracking_status():
                         else:
                             eta_str = "도착 시간 예측 불가"
 
-                        message_body = f"송장번호 : {invoice}\n{norm_status} : {eta_str}"
+                        message_body = f"송장번호 : {invoice}\n{current_status} : {eta_str}"
 
                     send_fcm_notification(
                         token,
