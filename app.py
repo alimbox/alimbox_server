@@ -568,8 +568,12 @@ def check_tracking_status():
 
                 # ✅ 상태 변경 후 저장
                 sub['current_status'] = norm_status
+                sub['status'] = norm_status
                 doc_ref = db.collection("subscriptions").document(f"{user_id}_{invoice}")
-                doc_ref.update({"current_status": norm_status})
+                doc_ref.update({
+                    "current_status": norm_status,
+                    "status": norm_status  # 💥 추가
+                })
                 print(f"☁️ Firestore current_status 업데이트 → {user_id}_{invoice}: {norm_status}")
 
                 save_subscriptions_to_file()
